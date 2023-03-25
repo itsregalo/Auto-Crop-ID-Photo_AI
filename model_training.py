@@ -128,10 +128,16 @@ new_dir = 'data'
 if not os.path.exists(new_dir):
     os.makedirs(new_dir)
 
-# rename all the files in the directory as .jpg to facilitate the use of the model
+# rename all the files in the directory
 for i, file in enumerate(os.listdir(original_dir)):
     if file.endswith('.jpg'):
         os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.jpg'))
+
+    if file.endswith('.jpeg'):
+        os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.jpg'))
+
+    if file.endswith('.png'):
+        os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.png'))
 
 # check the number of files in the directory
 print(len(os.listdir(original_dir))) # 3817
