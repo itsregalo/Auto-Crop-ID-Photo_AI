@@ -139,6 +139,9 @@ for i, file in enumerate(os.listdir(original_dir)):
     if file.endswith('.png'):
         os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.png'))
 
+    if file.endswith('.JPG'):
+        os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.jpg'))
+
 # check the number of files in the directory
 print(len(os.listdir(original_dir))) # 3817
 
@@ -165,14 +168,14 @@ Therefore, we need to split the data into training, validation, and test sets, a
 
 # move the first 2000 files to the training directory
 for i, file in enumerate(os.listdir(original_dir)):
-    if i < 2000:
+    if i < 5000:
         os.rename(os.path.join(original_dir, file), os.path.join(train_dir, file))
     else:
         break
 
 # move the next 500 files to the validation directory
 for i, file in enumerate(os.listdir(original_dir)):
-    if i < 500:
+    if i < 1000:
         os.rename(os.path.join(original_dir, file), os.path.join(validation_dir, file))
     else:
         break
@@ -181,5 +184,52 @@ for i, file in enumerate(os.listdir(original_dir)):
 for i, file in enumerate(os.listdir(original_dir)):
     os.rename(os.path.join(original_dir, file), os.path.join(test_dir, file))
     
+
+# check the number of files in the training, validation, and test directories
+print(len(os.listdir(train_dir))) # 5000
+print(len(os.listdir(validation_dir))) # 1000
+print(len(os.listdir(test_dir))) # 1219
+
+# %%
+# Train the model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras import layers
+from tensorflow.keras import Model
+from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.models import load_model
+
+# create the model
+history = train_model()
+
+def train_model():
+    """
+    Train the model
+    """
+    # Define the training and validation data directories
+    train_dir = 'data/train'
+    validation_dir = 'data/validation'
+
+    # Define the training and validation data generators
+    train_datagen = ImageDataGenerator(rescale=1./255, rotation_range=40, width_shift_range=0.2, height_shift_range=0.2, shear_range=0.2, zoom_range=0.2, horizontal_flip=True, fill_mode='nearest')
+    validation_datagen = ImageDataGenerator(rescale=1./255)
+
+    # Define the training and validation data generators
+    train_generator = train_datagen.flow_from_directory(train_dir, batch_size=20, class_mode='binary', target_size=(150, 150))
+    validation_generator = validation_datagen.flow_from_directory(validation_dir, batch_size=20, class_mode='binary', target_size=(150, 150))
+
+    # Create the model
+    model = create_model()
+
+    # Define the model checkpoint and early stopping callbacks
+    checkpoint = ModelCheckpoint('model.h5', monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False, mode='auto', save_freq='epoch')
+    early = EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1, mode='auto')
+
+    # Train the model
+    history = model.fit(train_generator, validation_data=validation_generator, epochs=100, steps_per_epoch=100, validation_steps=50, verbose=2, callbacks=[checkpoint, early])
+
+    return history
+
 
 
