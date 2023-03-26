@@ -1,13 +1,5 @@
 # %%
 # Automatic generation system of student ID photos based on deep learning
-!pip install -q kaggle
-!mkdir -p ~/.kaggle
-!cp kaggle.json ~/.kaggle/
-!chmod 600 ~/.kaggle/kaggle.json
-
-!kaggle datasets download -d ashwingupta3012/human-faces
-
-!unzip human-faces.zip
 
 # %%
 """
@@ -15,127 +7,214 @@ A model to be used in a webpage that can automatically complete the cropping of 
 information, and generate a standard version of the ID photo
 """
 
+!pip install -q kaggle
+!mkdir -p ~/.kaggle
+!cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+
+!kaggle competitions download -c facial-keypoints-detection
+
+!unzip facial-keypoints-detection.zip
+
+# %%
 import os
-import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import cv2
+import glob as gb
 import tensorflow as tf
+import splitfolders
+from tensorflow import keras
 from tensorflow.keras import layers
-from tensorflow.keras import Model
-from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.preprocessing import image
-from tensorflow.keras.applications.inception_v3 import InceptionV3
-from tensorflow.keras.applications.inception_v3 import preprocess_input
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from tensorflow.keras.models import load_model
-from tensorflow.keras import backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping                                               
 
-# rename all the files in the directory as .jpg to facilitate the use of the model
-original_dir = 'Humans'
-new_dir = 'data'
-
-# Create the new directory
-if not os.path.exists(new_dir):
-    os.makedirs(new_dir)
-
-# rename all the files in the directory
-for i, file in enumerate(os.listdir(original_dir)):
-    if file.endswith('.jpg'):
-        os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.jpg'))
-
-    if file.endswith('.jpeg'):
-        os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.jpg'))
-
-    if file.endswith('.png'):
-        os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.png'))
-
-    if file.endswith('.JPG'):
-        os.rename(os.path.join(original_dir, file), os.path.join(original_dir, str(i) + '.jpg'))
-
-# check the number of files in the directory
-print(len(os.listdir(original_dir))) # 3817
 
 # %%
-# Split the data into training, validation, and test sets
-
-# Create the training, validation, and test directories
-train_dir = os.path.join(new_dir, 'train')
-validation_dir = os.path.join(new_dir, 'validation')
-test_dir = os.path.join(new_dir, 'test')
-
-# Create the training, validation, and test directories
-if not os.path.exists(train_dir):
-    os.makedirs(train_dir)
-if not os.path.exists(validation_dir):
-    os.makedirs(validation_dir)
-if not os.path.exists(test_dir):
-    os.makedirs(test_dir)
-
 """
-We want to use the data to train the model to detect faces so that we can crop the photos according to the detected key point information.
-Therefore, we need to split the data into training, validation, and test sets, and then split the training set into training and validation sets.
+file structure:
+    - facial-keypoints-detection.zip
+    - IdLookupTable.csv
+    - SampleSubmission.csv
+    - test.zip
+    - training.zip
 """
 
-# move the first 2000 files to the training directory
-for i, file in enumerate(os.listdir(original_dir)):
-    if i < 5000:
-        os.rename(os.path.join(original_dir, file), os.path.join(train_dir, file))
-    else:
-        break
+with zipfile.ZipFile('training.zip', 'r') as zip_ref:
+    zip_ref.extractall('data')
 
-# move the next 500 files to the validation directory
-for i, file in enumerate(os.listdir(original_dir)):
-    if i < 1000:
-        os.rename(os.path.join(original_dir, file), os.path.join(validation_dir, file))
-    else:
-        break
+with zipfile.ZipFile('test.zip', 'r') as zip_ref:
+    zip_ref.extractall('data')
 
-# move the remaining files to the test directory
-for i, file in enumerate(os.listdir(original_dir)):
-    os.rename(os.path.join(original_dir, file), os.path.join(test_dir, file))
-    
+# Load the training dataset into memory
+train_data = pd.read_csv('data/training.csv')
 
-# check the number of files in the training, validation, and test directories
-print(len(os.listdir(train_dir))) # 5000
-print(len(os.listdir(validation_dir))) # 1000
-print(len(os.listdir(test_dir))) # 1219
+train_data.head()
 
 # %%
-# model training
+# test data
+test_data = pd.read_csv('data/test.csv')
+test_data.head()
 
-# Create the base model from the pre-trained model InceptionV3
-base_model = InceptionV3(input_shape = (150, 150, 3), # Shape of our images
-                            include_top = False, # Leave out the last fully connected layer     
-                            weights = 'imagenet')
+# %%
+# check the number of missing values
+train_data.isnull().sum()
 
-# Freeze the base model
-base_model.trainable = False
+# using ffill to fill the missing values
+train_data.fillna(method='ffill', inplace=True)
 
-# Add a classification head
-maxpool_layer = layers.GlobalMaxPooling2D()
-prediction_layer = layers.Dense(1, activation='sigmoid')
-model = tf.keras.Sequential([
-    base_model,
-    maxpool_layer,
-    prediction_layer
+## Analysis of the Images
+# %%
+im_width, im_height = 96, 96
+
+# %%
+# checking the data type of the image column
+type(train_data['Image'][0]) # str
+
+# %%
+# convert the image column to numpy array
+train_data['Image'] = train_data['Image'].apply(lambda x: np.fromstring(x, sep=' '))
+
+# %%
+img = []
+
+for i in range(0, 7049):
+    img_pixel = train_data['Image'][i].reshape(im_width, im_height)
+    img.append(img_pixel)
+
+# %%
+# convert the list to numpy array
+img = np.array(img)
+
+# %%
+# pprint some images
+fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+ax[0, 0].imshow(img[0], cmap='gray')
+ax[0, 1].imshow(img[1], cmap='gray')
+ax[1, 0].imshow(img[2], cmap='gray')
+ax[1, 1].imshow(img[3], cmap='gray')
+
+# %%
+# separate the features and labels
+X = img
+y = train_data.drop(['Image'], axis=1)
+
+# %%
+from sklearn.model_selection import train_test_split
+# split the data into training and validation set
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# %%
+# convert the data to float32
+X_train = X_train.astype('float32')
+X_val = X_val.astype('float32')
+
+# %%
+# normalize the data
+X_train /= 255
+X_val /= 255
+
+# %%
+# reshape the data
+X_train = X_train.reshape(-1, 96, 96, 1)
+X_val = X_val.reshape(-1, 96, 96, 1)
+
+# %%
+
+# check the shape of the data
+X_train.shape, X_val.shape, y_train.shape, y_val.shape
+
+plt.imshow(X_train[1500])
+plt.show()
+
+# face keypoints
+def show_keypoints(image, keypoints):
+    plt.imshow(image, cmap='gray')
+    plt.scatter(keypoints[0::2], keypoints[1::2], marker='o', s=20, c='r')
+
+# %%
+plt.figure(figsize=(20, 10))
+for i in range(0, 5):
+    plt.subplot(1, 5, i+1)
+    show_keypoints(X_train[i], y_train.iloc[i])
+
+# %%
+# define the model
+model = keras.Sequential([
+    layers.Conv2D(32, (3, 3), activation='relu', input_shape=(96, 96, 1)),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, (3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(128, (3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(128, (3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Flatten(),
+    layers.Dropout(0.5),
+    layers.Dense(512, activation='relu'),
+    layers.Dense(30)
 ])
 
-# Compile the model
-model.compile(optimizer = RMSprop(lr=0.0001),
-                loss = 'binary_crossentropy',           
-                metrics = ['accuracy'])
+# %%
+# compile the model
+model.compile(optimizer='adam',
+                loss='mean_squared_error',          
+                metrics=['mae'])
 
 # %%
-# Data preprocessing
+# define the callbacks
+checkpoint = ModelCheckpoint('model-{epoch:03d}.model', monitor='val_loss', verbose=0, save_best_only=True, mode='auto')
+earlystop = EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=0, mode='auto')
 
-# Define the training and validation data generators
-train_datagen = ImageDataGenerator(rescale=1./255, rotation_range=40, width_shift_range=0.2, height_shift_range=0.2, shear_range=0.2, zoom_range=0.2, horizontal_flip=True, fill_mode='nearest')
-validation_datagen = ImageDataGenerator(rescale=1./255)
+# %%
+# train the model
+history = model.fit(X_train, y_train, epochs=100, callbacks=[checkpoint, earlystop], validation_data=(X_val, y_val))
 
-# Define the training and validation data generators
-train_generator = train_datagen.flow_from_directory(train_dir, batch_size=20, class_mode='raw', target_size=(150, 150))
-validation_generator = validation_datagen.flow_from_directory(validation_dir, batch_size=20, class_mode='raw', target_size=(150, 150))
+# %%
+# plot the loss and accuracy
+plt.plot(history.history['loss'], label='loss')
+plt.plot(history.history['val_loss'], label='val_loss')
+plt.legend()
+plt.show()
+
+# save the model
+model.save('model.h5')
+
+# %%
+# load the model
+model = keras.models.load_model('model.h5')
 
 """
-why is it getting 0 images?: 
+A flask  webpage that can automatically complete the cropping of the uploaded photos according to the detected key point
+information, and generate a standard version of the ID photo using the model trained above.
+"""
+
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory
+from werkzeug.utils import secure_filename
+import os
+import cv2
+
+app = Flask(__name__)
+
+# upload folder
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# allowed extensions
+ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg'])
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
+    # check if the request method is post
+    if request.method == 'POST':
+        
 
