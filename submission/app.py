@@ -17,33 +17,38 @@ def upload():
     # Get the uploaded file
     file = request.files['file']
     
-    # Read the file as an image
-    img = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
-    
-    # Perform keypoint detection and cropping here
-    
-    # Load the model
-    model = keras.models.load_model('model.h5')
-    
-    # Preprocess the image
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Read the image
+    img = cv2.imdecode(np.fromstring(file.read(), np.uint8), cv2.IMREAD_UNCHANGED)
+
+    # Check the image dimensions
+    if img.shape[0] < 96 or img.shape[1] < 96:
+        raise ValueError('Image is too small!')
+
+    # Resize the image to match the expected input shape of the model
     img = cv2.resize(img, (96, 96))
-    img = img / 255.0
-    img = img.reshape((1, 96, 96, 1))
 
-    # Generate the cropped image using the model
-    cropped_img = model.predict(img)
-    cropped_img = cv2.resize(cropped_img[0], (96, 96))
-    interpolation = cv2.INTER_NEAREST if cropped_img.shape[-1] == 1 else cv2.INTER_CUBIC
-    cropped_img = cv2.resize(cropped_img, (img.shape[1], img.shape[0]), interpolation=interpolation)
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Save the cropped image
-    image_path = os.path.join(current_dir, 'cropped_img.jpg')
-    cv2.imwrite(image_path, cropped_img)
+    # Load the model
+    model = keras.models.load_model(os.path.join(current_dir, 'model.h5'))
 
-    print('Image saved successfully')
+    # Predict the image
+    pred = model.predict(gray.reshape(-1, 96, 96, 1))
 
-    return render_template('index.html', cropped_img='cropped_img.jpg')
+    # Get the predicted image
+    pred = pred.reshape(96, 96)
+
+    # Convert to uint8
+    pred = pred.astype(np.uint8)
+
+    # Save the image
+    cv2.imwrite(os.path.join(current_dir, 'static/predicted.png'), pred)
+
+    return render_template('index.html', predicted='predicted.png')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+    
