@@ -20,30 +20,37 @@ def upload():
     # Read the file as an image
     img = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
     
-    # Perform keypoint detection and cropping here
-    
+    # Perform keypoint detection and crop face from image 
+    face_cascade = cv2.CascadeClassifier(current_dir + '/haarcascade_frontalface_default.xml')
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    for (x, y, w, h) in faces:
+        roi_gray = gray[y:y+h, x:x+w]
+        roi_color = img[y:y+h, x:x+w]
+        cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
+        cv2.imwrite(current_dir + '/static/face.jpg', roi_color)
+
     # Load the model
-    model = keras.models.load_model('model.h5')
-    
-    # Preprocess the image
+    model = keras.models.load_model(current_dir + '/model.h5')
+
+    # Resize the image to 48x48
+    img = cv2.resize(roi_color, (48, 48))
+
+    # Convert the image to grayscale
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = cv2.resize(img, (96, 96))
+
+    # Normalize the image
     img = img / 255.0
-    img = img.reshape((1, 96, 96, 1))
 
-    # Generate the cropped image using the model
-    cropped_img = model.predict(img)
-    cropped_img = cv2.resize(cropped_img[0], (96, 96))
-    interpolation = cv2.INTER_NEAREST if cropped_img.shape[-1] == 1 else cv2.INTER_CUBIC
-    cropped_img = cv2.resize(cropped_img, (img.shape[1], img.shape[0]), interpolation=interpolation)
+    # Reshape the image
+    img = img.reshape(1, 48, 48, 1)
 
-    # Save the cropped image
-    image_path = os.path.join(current_dir, 'cropped_img.jpg')
-    cv2.imwrite(image_path, cropped_img)
+    # save the image
+    cv2.imwrite(current_dir + '/static/face.jpg', roi_color)
 
-    print('Image saved successfully')
+    return render_template('index.html', prediction=model.predict_classes(img))
 
-    return render_template('index.html', cropped_img='cropped_img.jpg')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
