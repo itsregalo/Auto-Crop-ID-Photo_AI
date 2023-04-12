@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 from tensorflow import keras
 import os
+import base64
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -14,41 +15,42 @@ def home():
 
 @app.route('/upload', methods=['POST'])
 def upload():
+    
     # Get the uploaded file
     file = request.files['file']
-    
-    # Read the image
+
+    # Load the image
     img = cv2.imdecode(np.fromstring(file.read(), np.uint8), cv2.IMREAD_UNCHANGED)
 
-    # Check the image dimensions
-    if img.shape[0] < 96 or img.shape[1] < 96:
-        raise ValueError('Image is too small!')
+    # Load the face cascade classifier
+    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
-    # Resize the image to match the expected input shape of the model
-    img = cv2.resize(img, (96, 96))
+    # Detect faces in the image
+    faces = face_cascade.detectMultiScale(img, scaleFactor=1.1, minNeighbors=4)
 
-    # Convert to grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Loop through the faces
+    for (x, y, w, h) in faces:
+        # Crop the face
+        face = img[y:y+h, x:x+w]
 
-    # Load the model
-    model = keras.models.load_model(os.path.join(current_dir, 'model.h5'))
+        saved_image = cv2.imwrite(os.path.join(current_dir, 'saved_face.jpg'), face)
 
-    # Predict the image
-    pred = model.predict(gray.reshape(-1, 96, 96, 1))
+        # return the face as content
+        with open(os.path.join(current_dir, 'saved_face.jpg'), 'rb') as f:
+            face_content = f.read()
 
-    # Get the predicted image
-    pred = pred.reshape(96, 96)
+        # Encode the face content as base64
+        encoded_face = base64.b64encode(face_content)
 
-    # Convert to uint8
-    pred = pred.astype(np.uint8)
+        context = {
+            'cropped_image': encoded_face.decode('utf-8'),
+        }
 
-    # Save the image
-    cv2.imwrite(os.path.join(current_dir, 'static/predicted.png'), pred)
+        return render_template('cropped.html', **context)
 
-    return render_template('index.html', predicted='predicted.png')
 
+    # If no faces were detected, return an error message
+    return 'No faces were detected in the uploaded image.'
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-    
